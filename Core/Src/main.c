@@ -56,9 +56,7 @@ osThreadId defaultTaskHandle;
 FDCAN_FilterTypeDef sFilterConfig;
 FDCAN_RxHeaderTypeDef RxHeader;
 
-uint8_t TxData[] = {0x10, 0x32, 0x54, 0x76, 0x98, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0x00};
 uint8_t RxData[16];
-uint8_t TxData0[] = {0x10, 0x32, 0x54, 0x76, 0x98, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66};
 
 uint8_t rx_circular_buffer[512];
 uint8_t uart_byte = 0;
@@ -242,7 +240,7 @@ static void MX_FDCAN1_Init(void)
   hfdcan1.Instance = FDCAN1;
   hfdcan1.Init.ClockDivider = FDCAN_CLOCK_DIV1;
   hfdcan1.Init.FrameFormat = FDCAN_FRAME_FD_BRS; //FDCAN_FRAME_CLASSIC;
-  hfdcan1.Init.Mode = FDCAN_MODE_EXTERNAL_LOOPBACK; //FDCAN_MODE_EXTERNAL_LOOPBACK;  // FDCAN_MODE_NORMAL
+  hfdcan1.Init.Mode = FDCAN_MODE_NORMAL; //FDCAN_MODE_EXTERNAL_LOOPBACK;  // FDCAN_MODE_NORMAL
   hfdcan1.Init.AutoRetransmission = DISABLE;
   hfdcan1.Init.TransmitPause = ENABLE;
   hfdcan1.Init.ProtocolException = ENABLE;
@@ -344,7 +342,7 @@ static void MX_UART4_Init(void)
 
   /* USER CODE END UART4_Init 1 */
   huart4.Instance = UART4;
-  huart4.Init.BaudRate = 115200;
+  huart4.Init.BaudRate = 921600;
   huart4.Init.WordLength = UART_WORDLENGTH_8B;
   huart4.Init.StopBits = UART_STOPBITS_1;
   huart4.Init.Parity = UART_PARITY_NONE;
@@ -431,21 +429,6 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 
 }
 
-static uint32_t BufferCmp8b(uint8_t* pBuffer1, uint8_t* pBuffer2, uint16_t BufferLength)
-{
-  while(BufferLength--)
-  {
-    if(*pBuffer1 != *pBuffer2)
-    {
-      return 1;
-    }
-
-    pBuffer1++;
-    pBuffer2++;
-  }
-  return 0;
-}
-
 /**
   * @brief  Rx FIFO 0 callback.
   * @param  hfdcan pointer to an FDCAN_HandleTypeDef structure that contains
@@ -467,19 +450,93 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo0ITs)
     UartCanData d;
     d.magic_number = 0xAABBCCDE; //__bswap32(0xAABBCCDE);
     d.frame_id = RxHeader.Identifier;
-    d.data_len = 8; //(uint8_t)RxHeader.DataLength;
+    switch(RxHeader.DataLength)
+    {
+      case FDCAN_DLC_BYTES_0:
+        d.data_len = 0;
+        break;
+      case FDCAN_DLC_BYTES_1:
+        d.data_len = 1;
+        break;
+      case FDCAN_DLC_BYTES_2:
+        d.data_len = 2;
+        break;
+      case FDCAN_DLC_BYTES_3:
+        d.data_len = 3;
+        break;
+      case FDCAN_DLC_BYTES_4:
+        d.data_len = 4;
+        break;
+      case FDCAN_DLC_BYTES_5:
+        d.data_len = 5;
+        break;
+      case FDCAN_DLC_BYTES_6:
+        d.data_len = 6;
+        break;
+      case FDCAN_DLC_BYTES_7:
+        d.data_len = 7;
+        break;
+      case FDCAN_DLC_BYTES_8:
+        d.data_len = 8;
+        break;
+      default:
+        d.data_len = 0;
+        break;
+    }
     memcpy(d.data, RxData, 8);
     HAL_UART_Transmit(&huart4, (uint8_t*)&d, sizeof(d), 100);
-#if 0
-    uint8_t data_to_send[8 + 4];  /* 0xAABBCCDE */
-    data_to_send[3] = 0xAA;
-    data_to_send[2] = 0xBB;
-    data_to_send[1] = 0xCC;
-    data_to_send[0] = 0xDE;
-    memcpy(&data_to_send[4], RxData, 8);
+    HAL_GPIO_TogglePin(LED_OK_GPIO_Port, LED_OK_Pin);
+  }
+}
 
-    HAL_UART_Transmit(&huart4, data_to_send, sizeof(data_to_send), 100);
-#endif
+void HAL_FDCAN_RxFifo1Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo1ITs)
+{
+  if((RxFifo1ITs & FDCAN_IT_RX_FIFO1_NEW_MESSAGE) != 0)
+  {
+    /* Retrieve Rx messages from RX FIFO0 */
+    if (HAL_FDCAN_GetRxMessage(hfdcan, FDCAN_RX_FIFO1, &RxHeader, RxData) != HAL_OK)
+    {
+      Error_Handler();
+    }
+
+    UartCanData d;
+    d.magic_number = 0xAABBCCDE; //__bswap32(0xAABBCCDE);
+    d.frame_id = RxHeader.Identifier;
+    switch(RxHeader.DataLength)
+    {
+      case FDCAN_DLC_BYTES_0:
+        d.data_len = 0;
+        break;
+      case FDCAN_DLC_BYTES_1:
+        d.data_len = 1;
+        break;
+      case FDCAN_DLC_BYTES_2:
+        d.data_len = 2;
+        break;
+      case FDCAN_DLC_BYTES_3:
+        d.data_len = 3;
+        break;
+      case FDCAN_DLC_BYTES_4:
+        d.data_len = 4;
+        break;
+      case FDCAN_DLC_BYTES_5:
+        d.data_len = 5;
+        break;
+      case FDCAN_DLC_BYTES_6:
+        d.data_len = 6;
+        break;
+      case FDCAN_DLC_BYTES_7:
+        d.data_len = 7;
+        break;
+      case FDCAN_DLC_BYTES_8:
+        d.data_len = 8;
+        break;
+      default:
+        d.data_len = 0;
+        break;
+    }
+    memcpy(d.data, RxData, 8);
+    HAL_UART_Transmit(&huart4, (uint8_t*)&d, sizeof(d), 100);
     HAL_GPIO_TogglePin(LED_OK_GPIO_Port, LED_OK_Pin);
   }
 }
@@ -515,6 +572,17 @@ void StartDefaultTask(void const * argument)
   {
     Error_Handler();
   }
+
+  sFilterConfig.IdType = FDCAN_EXTENDED_ID;
+  sFilterConfig.FilterIndex = 1;
+  sFilterConfig.FilterType = FDCAN_FILTER_DUAL;
+  sFilterConfig.FilterConfig = FDCAN_FILTER_TO_RXFIFO1;
+  sFilterConfig.FilterID1 = 0xFFF;
+  sFilterConfig.FilterID2 = 0x1FFFFFFF;
+  if (HAL_FDCAN_ConfigFilter(&hfdcan1, &sFilterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
 #if 0
   /* Configure extended ID reception filter to Rx FIFO 1 */
   sFilterConfig.IdType = FDCAN_EXTENDED_ID;
@@ -531,7 +599,7 @@ void StartDefaultTask(void const * argument)
   /* Configure global filter:
      Filter all remote frames with STD and EXT ID
      Reject non matching frames with STD ID and EXT ID */
-  if (HAL_FDCAN_ConfigGlobalFilter(&hfdcan1, FDCAN_ACCEPT_IN_RX_FIFO0, FDCAN_ACCEPT_IN_RX_FIFO0, FDCAN_ACCEPT_IN_RX_FIFO0, FDCAN_ACCEPT_IN_RX_FIFO0) != HAL_OK)
+  if (HAL_FDCAN_ConfigGlobalFilter(&hfdcan1, FDCAN_ACCEPT_IN_RX_FIFO0, FDCAN_ACCEPT_IN_RX_FIFO1, FDCAN_ACCEPT_IN_RX_FIFO0, FDCAN_ACCEPT_IN_RX_FIFO1) != HAL_OK)
   {
     Error_Handler();
   }
@@ -544,42 +612,19 @@ void StartDefaultTask(void const * argument)
   }
 
   /* Activate Rx FIFO 0 new message notification on both FDCAN instances */
-  if (HAL_FDCAN_ActivateNotification(&hfdcan1, FDCAN_IT_RX_FIFO0_NEW_MESSAGE/* | FDCAN_IT_TX_COMPLETE | FDCAN_IT_TX_FIFO_EMPTY*/, 0) != HAL_OK)
+  if (HAL_FDCAN_ActivateNotification(&hfdcan1, FDCAN_IT_RX_FIFO0_NEW_MESSAGE | FDCAN_IT_RX_FIFO1_NEW_MESSAGE/* | FDCAN_IT_TX_COMPLETE | FDCAN_IT_TX_FIFO_EMPTY*/, 0) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_FDCAN_ActivateNotification(&hfdcan1, FDCAN_IT_RX_FIFO0_NEW_MESSAGE | FDCAN_IT_RX_FIFO1_NEW_MESSAGE/* | FDCAN_IT_TX_COMPLETE | FDCAN_IT_TX_FIFO_EMPTY*/, 1) != HAL_OK)
   {
     Error_Handler();
   }
 
 
-  int counter = 0;
   /* Infinite loop */
   for(;;)
   {
-#if 0
-    osDelay(200);
-    /* Add message to TX FIFO of FDCAN instance 1 */
-
-    /* Prepare Tx message Header */
-    FDCAN_TxHeaderTypeDef TxHeader;
-    TxHeader.Identifier = 0x444 + counter;
-    TxHeader.IdType = FDCAN_STANDARD_ID;
-    TxHeader.TxFrameType = FDCAN_DATA_FRAME;
-    TxHeader.DataLength = FDCAN_DLC_BYTES_8;
-    TxHeader.ErrorStateIndicator = FDCAN_ESI_ACTIVE;
-    TxHeader.BitRateSwitch = FDCAN_BRS_ON;
-    TxHeader.FDFormat = FDCAN_CLASSIC_CAN;
-    TxHeader.TxEventFifoControl = FDCAN_STORE_TX_EVENTS;
-    TxHeader.MessageMarker = 0x52;
-
-    if (HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan1, &TxHeader, TxData0) != HAL_OK)
-    {
-      //Error_Handler();
-    }
-    while(HAL_FDCAN_IsTxBufferMessagePending(&hfdcan1, 0)) {}
-#endif
-
-    osDelay(1);
-    /* Add message to TX FIFO of FDCAN instance 1 */
-
     if(uart_timeout_flag && uart_data_recv)
     {
       printf("uart timeout");
@@ -587,7 +632,6 @@ void StartDefaultTask(void const * argument)
       uart_data_recv = 0;
 
 
-      uint8_t is_complete_msg;
       uint8_t b = 0;
       uint8_t cnt = 0;
 
@@ -609,14 +653,47 @@ void StartDefaultTask(void const * argument)
         d.data_len = buffer[8];
         memcpy(d.data, &buffer[9], sizeof(d.data));
         d.crc = buffer[18] << 8 | buffer[17];
-        printf("fasz %d", d.frame_id);
+        uint32_t dlc_stm = FDCAN_DLC_BYTES_8;
+        switch(d.data_len)
+        {
+          case 0:
+            dlc_stm = FDCAN_DLC_BYTES_0;
+            break;
+          case 1:
+            dlc_stm = FDCAN_DLC_BYTES_1;
+            break;
+          case 2:
+            dlc_stm = FDCAN_DLC_BYTES_2;
+            break;
+          case 3:
+            dlc_stm = FDCAN_DLC_BYTES_3;
+            break;
+          case 4:
+            dlc_stm = FDCAN_DLC_BYTES_4;
+            break;
+          case 5:
+            dlc_stm = FDCAN_DLC_BYTES_5;
+            break;
+          case 6:
+            dlc_stm = FDCAN_DLC_BYTES_6;
+            break;
+          case 7:
+            dlc_stm = FDCAN_DLC_BYTES_7;
+            break;
+          case 8:
+            dlc_stm = FDCAN_DLC_BYTES_8;
+            break;
+          default:
+            dlc_stm = FDCAN_DLC_BYTES_0;
+            break;
+        }
 
         /* Prepare Tx message Header */
         FDCAN_TxHeaderTypeDef TxHeader;
         TxHeader.Identifier = d.frame_id;
-        TxHeader.IdType = FDCAN_STANDARD_ID;
+        TxHeader.IdType = d.frame_id > 0x7FF ? FDCAN_EXTENDED_ID : FDCAN_STANDARD_ID;
         TxHeader.TxFrameType = FDCAN_DATA_FRAME;
-        TxHeader.DataLength = FDCAN_DLC_BYTES_8;
+        TxHeader.DataLength = dlc_stm;
         TxHeader.ErrorStateIndicator = FDCAN_ESI_PASSIVE;
         TxHeader.BitRateSwitch = FDCAN_BRS_OFF;
         TxHeader.FDFormat = FDCAN_CLASSIC_CAN;
@@ -627,36 +704,18 @@ void StartDefaultTask(void const * argument)
         {
           //Error_Handler();
         }
-        while(HAL_FDCAN_IsTxBufferMessagePending(&hfdcan1, 0)) {}
 
-        osDelay(10);
+        if(d.frame_id > 0x7FF)
+          printf("big frame");
+        while(HAL_FDCAN_IsTxBufferMessagePending(&hfdcan1, d.frame_id > 0x7FF ? 1 : 0)) {}
       }
       else
       {
         printf("invalid buffer");
       }
     }
+    osDelay(1);
     HAL_IWDG_Refresh(&hiwdg);
-
-#if 0
-    /* Wait transmissions complete */
-    volatile int ret = 0;
-    while ((ret = HAL_FDCAN_GetTxFifoFreeLevel(&hfdcan1)) != 2) {}
-    if(HAL_FDCAN_GetRxFifoFillLevel(&hfdcan1, FDCAN_RX_FIFO0) != 1)
-    {
-      //Error_Handler();
-    }
-    osDelay(10);
-    /* Retrieve message from Rx FIFO 0 */
-    if (HAL_FDCAN_GetRxMessage(&hfdcan1, FDCAN_RX_FIFO0, &RxHeader, RxData) != HAL_OK)
-    {
-      Error_Handler();
-    }
-    else
-    {
-      HAL_GPIO_TogglePin(LED_OK_GPIO_Port, LED_OK_Pin);
-    }
-#endif
   }
   /* USER CODE END 5 */
 }
