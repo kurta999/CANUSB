@@ -9,3 +9,5 @@ To run this firmware successfully, you need to have:
 NUCLEO-G474RE
 Waveshare SN65HVD230 3.3 CAN Transreceiver
 Whatever USB-UART converter
+
+Default CAN baudrate is 500kbit/s
