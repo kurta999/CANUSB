@@ -23,6 +23,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "circbuff.h"
+#include "crc.h"
 #include <string.h>
 #include <stdio.h>
 #include <inttypes.h>
@@ -483,7 +484,8 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo0ITs)
         d.data_len = 0;
         break;
     }
-    memcpy(d.data, RxData, 8);
+    memcpy(d.data, RxData, 8);  /* 8 is constant, this is not a bug */
+    d.crc = crc16_calculate((uint8_t*)&d, sizeof(d) - 2);
     HAL_UART_Transmit(&huart4, (uint8_t*)&d, sizeof(d), 100);
     HAL_GPIO_TogglePin(LED_OK_GPIO_Port, LED_OK_Pin);
   }
@@ -535,7 +537,8 @@ void HAL_FDCAN_RxFifo1Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo1ITs)
         d.data_len = 0;
         break;
     }
-    memcpy(d.data, RxData, 8);
+    memcpy(d.data, RxData, 8);  /* 8 is constant, this is not a bug */
+    d.crc = crc16_calculate((uint8_t*)&d, sizeof(d) - 2);
     HAL_UART_Transmit(&huart4, (uint8_t*)&d, sizeof(d), 100);
     HAL_GPIO_TogglePin(LED_OK_GPIO_Port, LED_OK_Pin);
   }
@@ -648,66 +651,77 @@ void StartDefaultTask(void const * argument)
       if(buffer[3] == 0xAA && buffer[2] == 0xBB && buffer[1] == 0xCC && buffer[0] == 0xDD) /* Magic number matches */
       {
         UartCanData d;
-
+        d.magic_number = 0xAABBCCDD;
         d.frame_id = buffer[7] << 24 | buffer[6] << 16 | buffer[5] << 8 | buffer[4];
         d.data_len = buffer[8];
-        memcpy(d.data, &buffer[9], sizeof(d.data));
         d.crc = buffer[18] << 8 | buffer[17];
-        uint32_t dlc_stm = FDCAN_DLC_BYTES_8;
-        switch(d.data_len)
+        memcpy(d.data, &buffer[9], sizeof(d.data));
+
+        volatile uint16_t crc = crc16_calculate((uint8_t*)&d, sizeof(d) - 2);
+
+        if(crc == d.crc)
         {
-          case 0:
-            dlc_stm = FDCAN_DLC_BYTES_0;
-            break;
-          case 1:
-            dlc_stm = FDCAN_DLC_BYTES_1;
-            break;
-          case 2:
-            dlc_stm = FDCAN_DLC_BYTES_2;
-            break;
-          case 3:
-            dlc_stm = FDCAN_DLC_BYTES_3;
-            break;
-          case 4:
-            dlc_stm = FDCAN_DLC_BYTES_4;
-            break;
-          case 5:
-            dlc_stm = FDCAN_DLC_BYTES_5;
-            break;
-          case 6:
-            dlc_stm = FDCAN_DLC_BYTES_6;
-            break;
-          case 7:
-            dlc_stm = FDCAN_DLC_BYTES_7;
-            break;
-          case 8:
-            dlc_stm = FDCAN_DLC_BYTES_8;
-            break;
-          default:
-            dlc_stm = FDCAN_DLC_BYTES_0;
-            break;
+
+          uint32_t dlc_stm = FDCAN_DLC_BYTES_8;
+          switch(d.data_len)
+          {
+            case 0:
+              dlc_stm = FDCAN_DLC_BYTES_0;
+              break;
+            case 1:
+              dlc_stm = FDCAN_DLC_BYTES_1;
+              break;
+            case 2:
+              dlc_stm = FDCAN_DLC_BYTES_2;
+              break;
+            case 3:
+              dlc_stm = FDCAN_DLC_BYTES_3;
+              break;
+            case 4:
+              dlc_stm = FDCAN_DLC_BYTES_4;
+              break;
+            case 5:
+              dlc_stm = FDCAN_DLC_BYTES_5;
+              break;
+            case 6:
+              dlc_stm = FDCAN_DLC_BYTES_6;
+              break;
+            case 7:
+              dlc_stm = FDCAN_DLC_BYTES_7;
+              break;
+            case 8:
+              dlc_stm = FDCAN_DLC_BYTES_8;
+              break;
+            default:
+              dlc_stm = FDCAN_DLC_BYTES_0;
+              break;
+          }
+
+          /* Prepare Tx message Header */
+          FDCAN_TxHeaderTypeDef TxHeader;
+          TxHeader.Identifier = d.frame_id;
+          TxHeader.IdType = d.frame_id > 0x7FF ? FDCAN_EXTENDED_ID : FDCAN_STANDARD_ID;
+          TxHeader.TxFrameType = FDCAN_DATA_FRAME;
+          TxHeader.DataLength = dlc_stm;
+          TxHeader.ErrorStateIndicator = FDCAN_ESI_PASSIVE;
+          TxHeader.BitRateSwitch = FDCAN_BRS_OFF;
+          TxHeader.FDFormat = FDCAN_CLASSIC_CAN;
+          TxHeader.TxEventFifoControl = FDCAN_STORE_TX_EVENTS;
+          TxHeader.MessageMarker = 0x52;
+
+          if (HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan1, &TxHeader, d.data) != HAL_OK)
+          {
+            //Error_Handler();
+          }
+
+          if(d.frame_id > 0x7FF)
+            printf("big frame");
+          while(HAL_FDCAN_IsTxBufferMessagePending(&hfdcan1, d.frame_id > 0x7FF ? 1 : 0)) {}
         }
-
-        /* Prepare Tx message Header */
-        FDCAN_TxHeaderTypeDef TxHeader;
-        TxHeader.Identifier = d.frame_id;
-        TxHeader.IdType = d.frame_id > 0x7FF ? FDCAN_EXTENDED_ID : FDCAN_STANDARD_ID;
-        TxHeader.TxFrameType = FDCAN_DATA_FRAME;
-        TxHeader.DataLength = dlc_stm;
-        TxHeader.ErrorStateIndicator = FDCAN_ESI_PASSIVE;
-        TxHeader.BitRateSwitch = FDCAN_BRS_OFF;
-        TxHeader.FDFormat = FDCAN_CLASSIC_CAN;
-        TxHeader.TxEventFifoControl = FDCAN_STORE_TX_EVENTS;
-        TxHeader.MessageMarker = 0x52;
-
-        if (HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan1, &TxHeader, d.data) != HAL_OK)
+        else
         {
-          //Error_Handler();
+          printf("invalid crc");
         }
-
-        if(d.frame_id > 0x7FF)
-          printf("big frame");
-        while(HAL_FDCAN_IsTxBufferMessagePending(&hfdcan1, d.frame_id > 0x7FF ? 1 : 0)) {}
       }
       else
       {
